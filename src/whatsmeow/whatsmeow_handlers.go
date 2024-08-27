@@ -240,6 +240,10 @@ func (source *WhatsmeowHandlers) EventsHandler(rawEvt interface{}) {
 		}
 		return
 
+	case *events.JoinedGroup:
+		source.JoinedGroup(*evt)
+		return
+
 	case
 		*events.AppState,
 		*events.CallTerminate,
@@ -578,6 +582,48 @@ func (handler *WhatsmeowHandlers) OnLoggedOutEvent(evt events.LoggedOut) {
 
 	handler.Follow(message)
 	handler.UnRegister()
+}
+
+//#endregion
+
+//#region HANDLE JOINED GROUP EVENT
+
+type MessageText struct {
+	GroupDetails map[string]string `json:"group_details"`
+}
+
+func (handler *WhatsmeowHandlers) JoinedGroup(evt events.JoinedGroup) {
+
+	groupInfo := evt.GroupInfo
+
+	handler.GetLogger().Tracef("Joined Group %s", groupInfo.JID)
+
+	groupName := groupInfo.GroupName.Name
+
+	groupDetails := map[string]string{
+		"Group ID":     groupInfo.JID.String(),
+		"Group Name":   groupName,
+		"Owner":        groupInfo.OwnerJID.String(),
+		"Created":      groupInfo.GroupCreated.Format(time.RFC1123),
+		"Participants": fmt.Sprintf("%d", len(groupInfo.Participants)),
+		"Event":        "Joined Group",
+	}
+
+	messageContent := MessageText{
+		GroupDetails: groupDetails,
+	}
+
+	message := &whatsapp.WhatsappMessage{
+		Timestamp: time.Now().Truncate(time.Second),
+		Type:      whatsapp.SystemMessageType,
+		Id:        handler.Client.GenerateMessageID(),
+		Chat:      whatsapp.WASYSTEMCHAT,
+		Payload: map[string]interface{}{
+			"group_details": messageContent.GroupDetails,
+		},
+	}
+
+	handler.Follow(message)
 }
 
 //#endregion

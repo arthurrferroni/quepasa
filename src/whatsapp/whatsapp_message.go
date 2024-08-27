@@ -28,6 +28,8 @@ type WhatsappMessage struct {
 	// Message text if exists
 	Text string `json:"text,omitempty"`
 
+	Payload map[string]interface{} `json:"payload,omitempty"`
+
 	Attachment *WhatsappAttachment `json:"attachment,omitempty"`
 
 	// Do i send that ?
