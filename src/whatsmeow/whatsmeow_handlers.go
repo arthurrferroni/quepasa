@@ -36,14 +36,6 @@ type WhatsmeowHandlers struct {
 
 	LogEntry *log.Entry
 }
-type GroupDetails struct {
-	GroupID      string `json:"groupID"`
-	GroupName    string `json:"groupName"`
-	Owner        string `json:"owner"`
-	Created      string `json:"created"`
-	Participants int    `json:"participants"`
-	Event        string `json:"event"`
-}
 
 // get default log entry, never nil
 func (source *WhatsmeowHandlers) GetLogger() *log.Entry {
@@ -424,26 +416,18 @@ func ToJson(in interface{}) string {
 
 // Append to cache handlers if exists, and then webhook
 func (handler *WhatsmeowHandlers) Follow(message *whatsapp.WhatsappMessage) {
-	logentry := handler.GetLogger()
-
 	if handler.WAHandlers != nil {
-		// Following to internal handlers
+
+		// following to internal handlers
 		go handler.WAHandlers.Message(message)
+
 	} else {
-		logentry.Warn("no internal handler registered")
+		handler.GetLogger().Warn("no internal handler registered")
 	}
 
-	// Mark as read if message is sent by the connected number
-	if handler.WhatsappOptionsExtended.ReadUpdate && message.FromMe {
-		// Check if the message is from the connected number
-		if message.SenderJID == message.wid {
-			handler.MarkRead(message, types.ReceiptTypeRead)
-			logentry.Debugf("Marcando como lida a mensagem enviada: %s", message)
-		} else {
-			logentry.Debugf("A mensagem não foi enviada por você: %s", message)
-		}
-	} else {
-		logentry.Debugf("Mensagem recebida de fora da aplicação ou não configurada para marcar como lida: %s", message)
+	// testing, mark read function
+	if handler.WhatsappOptionsExtended.ReadUpdate && !message.FromBroadcast() {
+		go handler.MarkRead(message, types.ReceiptTypeRead)
 	}
 }
 
@@ -604,27 +588,42 @@ func (handler *WhatsmeowHandlers) OnLoggedOutEvent(evt events.LoggedOut) {
 
 //#region HANDLE JOINED GROUP EVENT
 
+type MessageText struct {
+	GroupDetails map[string]string `json:"group_details"`
+}
+
 func (handler *WhatsmeowHandlers) JoinedGroup(evt events.JoinedGroup) {
 
 	groupInfo := evt.GroupInfo
 
 	handler.GetLogger().Tracef("Joined Group %s", groupInfo.JID)
 
-	// Preenchendo dinamicamente as informações do grupo no WAGROUPCHAT
-	var WAGROUPCHAT = whatsapp.WhatsappChat{
-		Id:           groupInfo.JID.String(),
-		Title:        groupInfo.GroupName.Name,
-		Owner:        groupInfo.OwnerJID.String(),
-		Created:      fmt.Sprintf("%d", groupInfo.GroupCreated.Unix()),
-		Participants: len(groupInfo.Participants),
+	groupName := groupInfo.GroupName.Name
+
+	groupDetails := map[string]string{
+		"Group ID":     groupInfo.JID.String(),
+		"Group Name":   groupName,
+		"Owner":        groupInfo.OwnerJID.String(),
+		"Created":      groupInfo.GroupCreated.Format(time.RFC1123),
+		"Participants": fmt.Sprintf("%d", len(groupInfo.Participants)),
+		"Event":        "Joined Group",
 	}
 
-	message := whatsapp.WhatsappMessage{
+	messageContent := MessageText{
+		GroupDetails: groupDetails,
+	}
+
+	message := &whatsapp.WhatsappMessage{
 		Timestamp: time.Now().Truncate(time.Second),
-		Type:      whatsapp.GroupMessageType,
+		Type:      whatsapp.SystemMessageType,
 		Id:        handler.Client.GenerateMessageID(),
-		Chat:      WAGROUPCHAT,
+		Chat:      whatsapp.WASYSTEMCHAT,
+		Payload: map[string]interface{}{
+			"group_details": messageContent.GroupDetails,
+		},
 	}
 
-	handler.Follow(&message)
+	handler.Follow(message)
 }
+
+//#endregion
